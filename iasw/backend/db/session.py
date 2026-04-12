@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import chromadb
@@ -37,7 +36,11 @@ def init_db() -> None:
         if not session.get(RPSRecord, "C001"):
             session.add(RPSRecord(customer_id="C001", name="Priya Sharma"))
 
-        session.commit()
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
 
 
 # ---------------------------------------------------------------------------
