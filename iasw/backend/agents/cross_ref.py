@@ -11,11 +11,11 @@ def run(extracted: dict, old_name: str, new_name: str) -> dict:
             new_name_match (bool), new_name_score (int).
     """
     old_name_score = fuzz.ratio(
-        extracted.get("bride_name", "").lower(),
+        (extracted.get("bride_name") or "").lower(),
         old_name.lower(),
     )
     new_name_score = fuzz.ratio(
-        extracted.get("married_name", "").lower(),
+        (extracted.get("married_name") or "").lower(),
         new_name.lower(),
     )
     return {
