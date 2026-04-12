@@ -24,10 +24,10 @@ def create_marriage_certificate() -> None:
     lines = [
         ("MARRIAGE CERTIFICATE", font_title, 60),
         ("This certifies that", font_body, 120),
-        ("Bride Name: Priya Sharma", font_body, 180),
-        ("Groom Name: Rahul Mehta", font_body, 230),
-        ("Married Name: Priya Mehta", font_body, 280),
-        ("Date of Marriage: 15th March 2024", font_body, 330),
+        ("Bride Name: Dr.Shivani Raidas", font_body, 180),
+        ("Groom Name: Dr.Pankaj Behera", font_body, 230),
+        ("Married Name: Dr.Shivani Behera", font_body, 280),
+        ("Date of Marriage: 2nd March 2025", font_body, 330),
         ("Issued by: Municipal Corporation of Delhi", font_body, 380),
         ("Official Seal: [SEAL]", font_body, 450),
     ]
