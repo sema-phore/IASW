@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+streamlit
+langchain
+langchain-anthropic
+langsmith
+chromadb
+sqlalchemy
+pydantic
+python-multipart
+pdf2image
+pillow
+pytesseract
+pypdf
+rapidfuzz
+python-dotenv
+anthropic
