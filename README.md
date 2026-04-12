@@ -16,7 +16,7 @@ cd IASW
 ### 2. Install Python dependencies
 
 ```bash
-pip install -r iasw/requirements.txt
+uv add -r iasw/requirements.txt
 ```
 
 ### 3. Configure environment variables
@@ -28,7 +28,7 @@ cp .env.example .env
 Open `.env` and fill in the required keys:
 
 ```
-ANTHROPIC_API_KEY=your_anthropic_key
+OPENAI_API_KEY=your_openai_key
 LANGCHAIN_API_KEY=your_langsmith_key
 LANGCHAIN_TRACING_V2=true
 LANGCHAIN_PROJECT=iasw
