@@ -28,10 +28,10 @@ cp .env.example .env
 Open `.env` and fill in the required keys:
 
 ```
-OPENAI_API_KEY=your_openai_key
-LANGCHAIN_API_KEY=your_langsmith_key
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_PROJECT=iasw
+OPENAI_API_KEY = "your_openai_key"
+LANGCHAIN_API_KEY = "your_langsmith_key"
+LANGCHAIN_TRACING_V2 = "true"
+LANGCHAIN_PROJECT = "iasw"
 ```
 
 ### 4. Install Tesseract OCR
