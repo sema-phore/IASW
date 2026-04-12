@@ -10,6 +10,13 @@ _PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "forgery_check.
 
 
 def run(ocr_text: str, chroma_collection) -> dict:
+    """Assess document authenticity by checking OCR text against policy knowledge base.
+
+    Input:  ocr_text (str) — raw text from the document;
+            chroma_collection — ChromaDB collection containing forgery-detection policies.
+    Output: dict with authenticity_score (int 0-100), forgery_flags (list[str]),
+            verdict ("PASS" | "FAIL" | "FLAG"), or error fallback dict on failure.
+    """
     try:
         results = chroma_collection.query(query_texts=[ocr_text], n_results=2)
         docs = results.get("documents", [[]])[0]
@@ -29,8 +36,9 @@ def run(ocr_text: str, chroma_collection) -> dict:
         cleaned = re.sub(r"\s*```$", "", cleaned)
 
         return json.loads(cleaned)
-    except Exception:
+    except Exception as e:
         return {
+            "error": str(e),
             "authenticity_score": 50,
             "forgery_flags": ["processing_error"],
             "verdict": "FLAG",

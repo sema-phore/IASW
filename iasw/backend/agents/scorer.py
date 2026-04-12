@@ -17,6 +17,16 @@ def run(
     new_name: str,
     chroma_collection,
 ) -> dict:
+    """Compute an overall confidence score and generate an AI summary for a name-change request.
+
+    Input:  cross_ref (dict) — output of cross_ref.run();
+            forgery (dict) — output of forgery_check.run();
+            extracted (dict) — output of doc_processor.run();
+            old_name / new_name (str) — requested name change values;
+            chroma_collection — ChromaDB collection for policy context.
+    Output: dict with overall_confidence (float), summary (str),
+            recommended_action (str), reasoning (str), and component scores.
+    """
     results = chroma_collection.query(
         query_texts=["name change confidence scoring policy"],
         n_results=2,
@@ -58,7 +68,10 @@ def run(
 
     cleaned = re.sub(r"^```(?:json)?\s*", "", response_text.strip())
     cleaned = re.sub(r"\s*```$", "", cleaned)
-    llm_output = json.loads(cleaned)
+    try:
+        llm_output = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        llm_output = {"error": str(e), "summary": "Parse error", "recommended_action": "MANUAL_REVIEW", "reasoning": ""}
 
     overall_confidence = round(
         cross_ref["old_name_score"] * 0.4

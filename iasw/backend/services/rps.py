@@ -35,6 +35,10 @@ def write_name_update(
         ),
     )
     db_session.add(audit)
-    db_session.commit()
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
 
     return {"success": True, "customer_id": customer_id, "new_name": new_name}

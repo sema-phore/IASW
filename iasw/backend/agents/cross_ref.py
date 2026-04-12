@@ -2,6 +2,14 @@ from rapidfuzz import fuzz
 
 
 def run(extracted: dict, old_name: str, new_name: str) -> dict:
+    """Fuzzy-match extracted document names against the requested name change.
+
+    Input:  extracted (dict) — output from doc_processor.run();
+            old_name (str) — customer's current name;
+            new_name (str) — requested new name.
+    Output: dict with old_name_match (bool), old_name_score (int),
+            new_name_match (bool), new_name_score (int).
+    """
     old_name_score = fuzz.ratio(
         extracted.get("bride_name", "").lower(),
         old_name.lower(),

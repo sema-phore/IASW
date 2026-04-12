@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from iasw.backend.db.models import AuditLog
 from iasw.backend.services import ocr
@@ -12,17 +13,30 @@ def _log(db_session, request_id: str, agent_step: str, payload: dict) -> None:
         payload=json.dumps(payload),
     )
     db_session.add(entry)
-    db_session.commit()
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
 
 
 def run_pipeline(
-    file_path: str,
+    file_path: Path,
     old_name: str,
     new_name: str,
     db_session,
     chroma_collection,
     request_id: str,
 ) -> dict:
+    """Orchestrate the full AI processing pipeline for a name-change request.
+
+    Input:  file_path (Path) — local path to the uploaded document;
+            old_name / new_name (str) — requested name change values;
+            db_session — SQLAlchemy session for audit logging;
+            chroma_collection — ChromaDB collection for policy context;
+            request_id (str) — UUID for this request.
+    Output: dict with keys extracted, cross_ref, forgery, scoring, status.
+    """
     # 1. OCR
     raw_text = ocr.extract_text_from_file(file_path)
 

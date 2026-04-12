@@ -10,6 +10,12 @@ _PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "doc_extraction
 
 
 def run(ocr_text: str) -> dict:
+    """Extract structured fields from raw OCR text using an LLM.
+
+    Input:  ocr_text (str) — raw text extracted from the uploaded document.
+    Output: dict with keys bride_name, married_name, marriage_date, etc.,
+            or {"error": <message>, "raw": <response>} on JSON parse failure.
+    """
     llm = ChatOpenAI(model="gpt-4o", temperature=0)
     template = _PROMPT_PATH.read_text()
     prompt = PromptTemplate(template=template, input_variables=["ocr_text"])

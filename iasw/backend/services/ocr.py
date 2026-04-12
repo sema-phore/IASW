@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
 
-def extract_text_from_file(file_path: str) -> str:
+def extract_text_from_file(file_path: Path) -> str:
     """Extract text from a PDF or image file using OCR.
 
     Returns an empty string on unexpected failure, or a sentinel string when
@@ -28,7 +28,7 @@ def extract_text_from_file(file_path: str) -> str:
                 return ""
             image = pages[0]
         elif suffix in IMAGE_SUFFIXES:
-            image = Image.open(str(path))
+            image = Image.open(path)
         else:
             logger.warning("Unsupported file type for OCR: %s", suffix)
             return ""
@@ -36,7 +36,7 @@ def extract_text_from_file(file_path: str) -> str:
         text: str = pytesseract.image_to_string(image)
 
         if len(text.strip()) < 20:
-            return f"OCR_INSUFFICIENT: file saved at {file_path}"
+            return f"OCR_INSUFFICIENT: file saved at {path}"
 
         return text
 

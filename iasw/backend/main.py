@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Generator
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -13,6 +14,8 @@ from iasw.backend.agents import pipeline
 from iasw.backend.db.models import AuditLog, PendingRequest
 from iasw.backend.db.session import SessionLocal, get_chroma_collection, init_db
 from iasw.backend.services import filenet, rps
+
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -75,7 +78,11 @@ def _log_audit(db: Session, request_id: str, agent_step: str, payload: dict) -> 
             payload=json.dumps(payload),
         )
     )
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +112,7 @@ async def submit_name_change(
     # 3. Run AI pipeline
     request_id = str(uuid.uuid4())
     result = pipeline.run_pipeline(
-        file_path=str(local_path),
+        file_path=local_path,
         old_name=old_name,
         new_name=new_name,
         db_session=db,
@@ -130,7 +137,11 @@ async def submit_name_change(
         recommended_action=scoring.get("recommended_action"),
     )
     db.add(pending)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return {
         "request_id": request_id,
@@ -228,7 +239,11 @@ def submit_decision(
         row.checker_decision = "APPROVED"
         row.checker_comment = body.comment
         row.updated_at = datetime.utcnow()
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
 
         rps.write_name_update(
             customer_id=row.customer_id,
@@ -245,7 +260,11 @@ def submit_decision(
     row.checker_decision = "REJECTED"
     row.checker_comment = body.comment
     row.updated_at = datetime.utcnow()
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return {"success": True, "message": "Request rejected."}
 
