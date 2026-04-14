@@ -1,8 +1,12 @@
 fastapi
+httpx
 uvicorn
 streamlit
 langchain
-langchain-anthropic
+langchain-core
+langchain-community
+langchain-openai
+langgraph
 langsmith
 chromadb
 sqlalchemy
@@ -14,4 +18,3 @@ pytesseract
 pypdf
 rapidfuzz
 python-dotenv
-anthropic
