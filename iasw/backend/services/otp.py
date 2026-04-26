@@ -38,10 +38,26 @@ def verify_otp(contact_value: str, user_otp: str) -> dict:
     Output:
         dict with keys: verified (bool), contact (str)
         On exception: adds an "error" key with the exception message.
+
+    Side-effect: OTP is deleted from the store on successful verification (single-use).
     """
     try:
         expected = _otp_store.get(contact_value)
         verified = expected is not None and user_otp == expected
+        if verified:
+            del _otp_store[contact_value]  # OTP is single-use; clear after success
         return {"verified": verified, "contact": contact_value}
     except Exception as e:
         return {"verified": False, "contact": contact_value, "error": str(e)}
+
+
+def has_pending_otp(contact_value: str) -> bool:
+    """Check whether an OTP has been sent (and is pending verification) for this contact.
+
+    Input:
+        contact_value  - the phone number or email address to check
+
+    Output:
+        True if an OTP is waiting to be verified, False otherwise.
+    """
+    return contact_value in _otp_store

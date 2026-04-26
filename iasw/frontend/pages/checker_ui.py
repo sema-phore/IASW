@@ -62,7 +62,7 @@ for item in pending_list:
             new_display = new_val
         label = (
             f"[{change_tag}] {item['customer_id']} — "
-            f"{old_display} → {new_display}"
+            f"{old_display} → {new_display} [{score}%]"
         )
     else:
         label = (
@@ -148,7 +148,7 @@ else:
     col3.metric("Forgery Check", confidence.get("forgery_verdict", "—"), delta=None)
 
 # FileNet reference
-st.caption(f"FileNet Reference: {req.get('filenet_ref', 'N/A')}")
+st.caption(f"FileNet Reference: {req.get('filenet_ref') or 'N/A'}")
 
 # ---------------------------------------------------------------------------
 # Expanders — generic, render from JSON so they work for both change types

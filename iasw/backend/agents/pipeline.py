@@ -452,7 +452,7 @@ def _contact_scorer_node(state: ContactPipelineState) -> dict:
     scoring = {
         "overall_confidence": overall_confidence,
         "recommended_action": recommended_action,
-        "ai_summary": summary,
+        "summary": summary,
         "reasoning": reasoning,
         "otp_verified": otp_verified,
     }

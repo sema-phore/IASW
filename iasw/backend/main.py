@@ -272,14 +272,21 @@ def submit_contact_change(
     if customer is None:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # 2. Determine current value from the customer record
+    # 2. Guard: OTP must have been sent first via /otp/send
+    if not otp.has_pending_otp(body.new_value):
+        raise HTTPException(
+            status_code=400,
+            detail="OTP not sent. Call /otp/send first.",
+        )
+
+    # 3. Determine current value from the customer record
     old_value = customer.phone if body.contact_type == "PHONE" else customer.email
 
-    # 3. No FileNet save — contact changes have no document upload.
+    # 4. No FileNet save — contact changes have no document upload.
     #    filenet_ref is intentionally None (Per Rule 12).
     filenet_ref = None
 
-    # 4. Run contact pipeline (OTP-only, no OCR or LLM extraction)
+    # 5. Run contact pipeline (OTP-only, no OCR or LLM extraction)
     request_id = str(uuid.uuid4())
     result = pipeline.run_contact_pipeline(
         contact_type=body.contact_type,
@@ -305,7 +312,7 @@ def submit_contact_change(
         confidence_json=json.dumps(scoring),
         overall_status=result["status"],
         filenet_ref=filenet_ref,  # None — no document for contact changes
-        ai_summary=scoring.get("ai_summary"),
+        ai_summary=scoring.get("summary"),
         recommended_action=scoring.get("recommended_action"),
     )
     db.add(pending)
@@ -320,7 +327,7 @@ def submit_contact_change(
         "status": result["status"],
         "overall_confidence": scoring.get("overall_confidence"),
         "recommended_action": scoring.get("recommended_action"),
-        "summary": scoring.get("ai_summary"),
+        "summary": scoring.get("summary"),
     }
 
 
