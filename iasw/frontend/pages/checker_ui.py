@@ -49,6 +49,21 @@ for item in pending_list:
             f"[{change_tag}] {item['customer_id']} — "
             f"{old_display} → {new_display} [{score}%]"
         )
+    elif change_tag == "CONTACT_CHANGE":
+        try:
+            old_parsed = json.loads(old_val)
+            old_display = f"{old_parsed.get('contact_type', '')}: {old_parsed.get('value', '')}"
+        except Exception:
+            old_display = old_val
+        try:
+            new_parsed = json.loads(new_val)
+            new_display = f"{new_parsed.get('value', '')}"
+        except Exception:
+            new_display = new_val
+        label = (
+            f"[{change_tag}] {item['customer_id']} — "
+            f"{old_display} → {new_display}"
+        )
     else:
         label = (
             f"[{change_tag}] {item['customer_id']} — "
@@ -117,6 +132,13 @@ if change_type == "ADDRESS_CHANGE":
     )
     col5.metric("Authenticity", f"{confidence.get('authenticity_score', '—')}%")
     col6.metric("Forgery Check", confidence.get("forgery_verdict", "—"), delta=None)
+
+elif change_type == "CONTACT_CHANGE":
+    col1, col2 = st.columns(2)
+    otp_ok = confidence.get("overall_confidence", 0) == 100
+    col1.metric("OTP Verified", "Yes ✅" if otp_ok else "No ❌")
+    col2.metric("Overall Confidence", f"{confidence.get('overall_confidence', '—')}%")
+    st.caption("ℹ️ Contact changes are verified via OTP — no document analysis required.")
 
 else:
     # Original 3-column layout for NAME_CHANGE

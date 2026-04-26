@@ -95,6 +95,11 @@ _POLICY_DOCS = [
         "If the customer name on the address proof does not match the account name, "
         "the request must be flagged for manual review."
     ),
+    # --- Contact-change (phone/email) policies ---
+    "Phone number changes require OTP verification sent to the new phone number.",
+    "Email address changes require OTP verification sent to the new email address.",
+    "Contact changes verified via OTP do not require document upload or forgery checks.",
+    "OTP verification codes expire after 10 minutes. A maximum of 3 attempts are allowed.",
 ]
 
 

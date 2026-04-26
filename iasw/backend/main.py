@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from iasw.backend.agents import pipeline
 from iasw.backend.db.models import AuditLog, Customer, PendingRequest
 from iasw.backend.db.session import SessionLocal, get_chroma_collection, init_db
-from iasw.backend.services import filenet, rps
+from iasw.backend.services import filenet, rps, otp
 
 load_dotenv()
 
@@ -65,6 +65,18 @@ class DecisionRequest(BaseModel):
     decision: str  # "APPROVE" | "REJECT"
     checker_id: str
     comment: str
+
+
+class OTPSendRequest(BaseModel):
+    contact_value: str  # phone number or email address
+    contact_type: str   # "PHONE" or "EMAIL"
+
+
+class ContactChangeRequest(BaseModel):
+    customer_id: str
+    contact_type: str   # "PHONE" or "EMAIL"
+    new_value: str      # new phone number or email address
+    otp_code: str       # user-entered OTP
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +246,84 @@ async def submit_address_change(
     }
 
 
+@app.post("/otp/send")
+def send_otp_endpoint(body: OTPSendRequest):
+    """Send a mock OTP to the given contact value.
+
+    No DB interaction needed — the OTP store is held in-process by otp.py.
+    """
+    result = otp.send_otp(body.contact_value, body.contact_type)
+    return result
+
+
+@app.post("/requests/contact-change")
+def submit_contact_change(
+    body: ContactChangeRequest,
+    db: Session = Depends(get_db),
+    chroma=Depends(get_chroma),
+):
+    """Submit a phone or email change request.
+
+    This endpoint intentionally skips OCR and document upload.
+    Contact changes are verified via OTP — this is correct design, not a shortcut.
+    """
+    # 1. Look up customer — 404 if not found
+    customer = db.query(Customer).filter_by(customer_id=body.customer_id).first()
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    # 2. Determine current value from the customer record
+    old_value = customer.phone if body.contact_type == "PHONE" else customer.email
+
+    # 3. No FileNet save — contact changes have no document upload.
+    #    filenet_ref is intentionally None (Per Rule 12).
+    filenet_ref = None
+
+    # 4. Run contact pipeline (OTP-only, no OCR or LLM extraction)
+    request_id = str(uuid.uuid4())
+    result = pipeline.run_contact_pipeline(
+        contact_type=body.contact_type,
+        customer_name=customer.current_name,
+        old_value=old_value or "",
+        new_value=body.new_value,
+        otp_code=body.otp_code,
+        db_session=db,
+        chroma_collection=chroma,
+        request_id=request_id,
+    )
+
+    scoring = result["scoring"]
+
+    # 5. Persist PendingRequest — old/new stored as JSON for consistent parsing
+    pending = PendingRequest(
+        request_id=request_id,
+        customer_id=body.customer_id,
+        change_type="CONTACT_CHANGE",
+        old_value=json.dumps({"contact_type": body.contact_type, "value": old_value or ""}),
+        new_value=json.dumps({"contact_type": body.contact_type, "value": body.new_value}),
+        extracted_json=json.dumps(result["extracted"]),
+        confidence_json=json.dumps(scoring),
+        overall_status=result["status"],
+        filenet_ref=filenet_ref,  # None — no document for contact changes
+        ai_summary=scoring.get("ai_summary"),
+        recommended_action=scoring.get("recommended_action"),
+    )
+    db.add(pending)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "request_id": request_id,
+        "status": result["status"],
+        "overall_confidence": scoring.get("overall_confidence"),
+        "recommended_action": scoring.get("recommended_action"),
+        "summary": scoring.get("ai_summary"),
+    }
+
+
 @app.get("/requests/pending")
 def list_pending_requests(db: Session = Depends(get_db)):
     rows = (
@@ -349,6 +439,27 @@ def submit_decision(
                 db_session=db,
             )
             return {"success": True, "message": f"RPS updated. Address changed to {new_addr['address']}, {new_addr['city']}."}
+
+        elif row.change_type == "CONTACT_CHANGE":
+            new_contact = json.loads(row.new_value)
+            if new_contact["contact_type"] == "PHONE":
+                rps.write_phone_update(
+                    customer_id=row.customer_id,
+                    new_phone=new_contact["value"],
+                    request_id=request_id,
+                    db_session=db,
+                )
+            elif new_contact["contact_type"] == "EMAIL":
+                rps.write_email_update(
+                    customer_id=row.customer_id,
+                    new_email=new_contact["value"],
+                    request_id=request_id,
+                    db_session=db,
+                )
+            return {
+                "success": True,
+                "message": f"RPS updated. {new_contact['contact_type']} changed to {new_contact['value']}.",
+            }
 
         else:
             return {"success": True, "message": f"Request approved (no RPS write for change_type={row.change_type})."}

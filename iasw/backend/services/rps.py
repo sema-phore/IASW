@@ -114,3 +114,103 @@ def write_address_update(
         "new_state": new_state,
         "new_pincode": new_pincode,
     }
+
+
+def write_phone_update(
+    customer_id: str,
+    new_phone: str,
+    request_id: str,
+    db_session,
+) -> dict:
+    """Write an approved phone number change to the mock RPS core-banking record.
+
+    Input:
+        customer_id  - the customer whose record is being updated
+        new_phone    - new phone number (OTP-verified before this point)
+        request_id   - UUID of the PendingRequest authorising this write
+        db_session   - active SQLAlchemy session
+
+    Output:
+        dict with keys: success (bool), customer_id (str), new_phone (str)
+
+    Raises ValueError if the HITL constraint is not met (request not APPROVED).
+    Never call this function directly from an agent — only from the decision endpoint.
+    """
+    # HITL guard — request must be APPROVED before any RPS write
+    pending = db_session.query(PendingRequest).filter_by(request_id=request_id).first()
+    if pending is None or pending.overall_status != "APPROVED":
+        raise ValueError(
+            "RPS write blocked: HITL constraint not met. "
+            "Request must be in APPROVED status before writing to RPS."
+        )
+
+    rps_record = db_session.query(RPSRecord).filter_by(customer_id=customer_id).first()
+    if rps_record:
+        rps_record.phone = new_phone
+        rps_record.last_updated = datetime.utcnow()
+
+    audit = AuditLog(
+        request_id=request_id,
+        agent_step="RPS_WRITE_PHONE",
+        payload=json.dumps(
+            {"customer_id": customer_id, "new_phone": new_phone, "request_id": request_id}
+        ),
+    )
+    db_session.add(audit)
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+
+    return {"success": True, "customer_id": customer_id, "new_phone": new_phone}
+
+
+def write_email_update(
+    customer_id: str,
+    new_email: str,
+    request_id: str,
+    db_session,
+) -> dict:
+    """Write an approved email address change to the mock RPS core-banking record.
+
+    Input:
+        customer_id  - the customer whose record is being updated
+        new_email    - new email address (OTP-verified before this point)
+        request_id   - UUID of the PendingRequest authorising this write
+        db_session   - active SQLAlchemy session
+
+    Output:
+        dict with keys: success (bool), customer_id (str), new_email (str)
+
+    Raises ValueError if the HITL constraint is not met (request not APPROVED).
+    Never call this function directly from an agent — only from the decision endpoint.
+    """
+    # HITL guard — request must be APPROVED before any RPS write
+    pending = db_session.query(PendingRequest).filter_by(request_id=request_id).first()
+    if pending is None or pending.overall_status != "APPROVED":
+        raise ValueError(
+            "RPS write blocked: HITL constraint not met. "
+            "Request must be in APPROVED status before writing to RPS."
+        )
+
+    rps_record = db_session.query(RPSRecord).filter_by(customer_id=customer_id).first()
+    if rps_record:
+        rps_record.email = new_email
+        rps_record.last_updated = datetime.utcnow()
+
+    audit = AuditLog(
+        request_id=request_id,
+        agent_step="RPS_WRITE_EMAIL",
+        payload=json.dumps(
+            {"customer_id": customer_id, "new_email": new_email, "request_id": request_id}
+        ),
+    )
+    db_session.add(audit)
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+
+    return {"success": True, "customer_id": customer_id, "new_email": new_email}

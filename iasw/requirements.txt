@@ -18,3 +18,4 @@ pytesseract
 pypdf
 rapidfuzz
 python-dotenv
+python-dateutil
