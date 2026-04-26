@@ -11,6 +11,10 @@ from iasw.backend.agents import (
     cross_ref as cross_ref_agent,
     forgery_check,
     scorer,
+    address_doc_processor,
+    address_cross_ref as address_cross_ref_agent,
+    address_forgery_check,
+    address_scorer,
 )
 
 
@@ -181,6 +185,190 @@ def run_pipeline(
     }
 
     final_state = _PIPELINE_GRAPH.invoke(initial_state)
+
+    return {
+        "extracted": final_state["extracted"],
+        "cross_ref": final_state["cross_ref"],
+        "forgery": final_state["forgery"],
+        "scoring": final_state["scoring"],
+        "status": final_state["status"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Address-change pipeline
+# ---------------------------------------------------------------------------
+
+class AddressPipelineState(TypedDict):
+    """Shared state carried across all LangGraph nodes in the address pipeline."""
+
+    file_path: Path
+    customer_name: str
+    old_address: dict   # {address, city, state, pincode} — current on-record address
+    new_address: dict   # {address, city, state, pincode} — requested new address
+    db_session: Any
+    chroma_collection: Any
+    request_id: str
+    # intermediate / output fields
+    raw_text: str
+    extracted: dict
+    cross_ref: dict
+    forgery: dict
+    scoring: dict
+    status: str
+
+
+def _address_ocr_node(state: AddressPipelineState) -> dict:
+    """Run OCR on the uploaded address proof document and log the char count.
+
+    Input:  state with file_path, db_session, request_id.
+    Output: partial state update with raw_text (str).
+    """
+    raw_text = ocr.extract_text_from_file(state["file_path"])
+    _log(state["db_session"], state["request_id"], "ADDR_OCR_COMPLETE", {"chars": len(raw_text)})
+    return {"raw_text": raw_text}
+
+
+def _address_doc_processor_node(state: AddressPipelineState) -> dict:
+    """Extract structured address fields from OCR text and log the result.
+
+    Input:  state with raw_text, db_session, request_id.
+    Output: partial state update with extracted (dict).
+    """
+    extracted = address_doc_processor.run(state["raw_text"])
+    _log(state["db_session"], state["request_id"], "ADDR_DOC_EXTRACTED", extracted)
+    return {"extracted": extracted}
+
+
+def _address_cross_ref_node(state: AddressPipelineState) -> dict:
+    """Validate extracted address fields against customer and requested address data.
+
+    Input:  state with extracted, customer_name, new_address, db_session, request_id.
+    Output: partial state update with cross_ref (dict).
+    """
+    cross_ref = address_cross_ref_agent.run(
+        state["extracted"],
+        state["customer_name"],
+        state["new_address"],
+    )
+    _log(state["db_session"], state["request_id"], "ADDR_CROSS_REF_COMPLETE", cross_ref)
+    return {"cross_ref": cross_ref}
+
+
+def _address_forgery_node(state: AddressPipelineState) -> dict:
+    """Assess address proof authenticity against policy knowledge base and log.
+
+    Input:  state with raw_text, chroma_collection, db_session, request_id.
+    Output: partial state update with forgery (dict).
+    """
+    forgery = address_forgery_check.run(state["raw_text"], state["chroma_collection"])
+    _log(state["db_session"], state["request_id"], "ADDR_FORGERY_CHECK_COMPLETE", forgery)
+    return {"forgery": forgery}
+
+
+def _address_scorer_node(state: AddressPipelineState) -> dict:
+    """Compute overall confidence score and AI summary for address change, then log.
+
+    Input:  state with cross_ref, forgery, extracted, old_address, new_address,
+            customer_name, chroma_collection, db_session, request_id.
+    Output: partial state update with scoring (dict).
+    """
+    result = address_scorer.run(
+        state["cross_ref"],
+        state["forgery"],
+        state["extracted"],
+        state["old_address"],
+        state["new_address"],
+        state["customer_name"],
+        state["chroma_collection"],
+    )
+    _log(state["db_session"], state["request_id"], "ADDR_SCORING_COMPLETE", result)
+    return {"scoring": result}
+
+
+def _address_status_node(state: AddressPipelineState) -> dict:
+    """Determine final AI status from scoring and forgery verdict.
+
+    Input:  state with scoring (dict), forgery (dict).
+    Output: partial state update with status ("AI_FLAGGED" or
+            "AI_VERIFIED_PENDING_HUMAN").
+    """
+    confidence = state["scoring"]["overall_confidence"]
+    forgery_verdict = state["forgery"]["verdict"]
+
+    if confidence < 60 or forgery_verdict == "FAIL":
+        status = "AI_FLAGGED"
+    else:
+        status = "AI_VERIFIED_PENDING_HUMAN"
+
+    return {"status": status}
+
+
+def _build_address_graph():
+    """Compile the LangGraph StateGraph for the address-change processing pipeline."""
+    graph = StateGraph(AddressPipelineState)
+
+    graph.add_node("ocr", _address_ocr_node)
+    graph.add_node("doc_processor", _address_doc_processor_node)
+    graph.add_node("cross_ref", _address_cross_ref_node)
+    graph.add_node("forgery", _address_forgery_node)
+    graph.add_node("scorer", _address_scorer_node)
+    graph.add_node("status", _address_status_node)
+
+    graph.set_entry_point("ocr")
+    graph.add_edge("ocr", "doc_processor")
+    graph.add_edge("doc_processor", "cross_ref")
+    graph.add_edge("cross_ref", "forgery")
+    graph.add_edge("forgery", "scorer")
+    graph.add_edge("scorer", "status")
+    graph.add_edge("status", END)
+
+    return graph.compile()
+
+
+# Compiled once at import time; reused for every request.
+_ADDRESS_PIPELINE_GRAPH = _build_address_graph()
+
+
+def run_address_pipeline(
+    file_path: Path,
+    customer_name: str,
+    old_address: dict,
+    new_address: dict,
+    db_session,
+    chroma_collection,
+    request_id: str,
+) -> dict:
+    """Orchestrate the full AI address-change pipeline via a LangGraph StateGraph.
+
+    Input:
+        file_path       - local path to the uploaded address proof document
+        customer_name   - account holder name on record
+        old_address     - dict {address, city, state, pincode} currently on record
+        new_address     - dict {address, city, state, pincode} being requested
+        db_session      - SQLAlchemy session for audit logging
+        chroma_collection - ChromaDB collection for policy context
+        request_id      - UUID for this request
+
+    Output: dict with keys extracted, cross_ref, forgery, scoring, status.
+    """
+    initial_state: AddressPipelineState = {
+        "file_path": file_path,
+        "customer_name": customer_name,
+        "old_address": old_address,
+        "new_address": new_address,
+        "db_session": db_session,
+        "chroma_collection": chroma_collection,
+        "request_id": request_id,
+        "raw_text": "",
+        "extracted": {},
+        "cross_ref": {},
+        "forgery": {},
+        "scoring": {},
+        "status": "",
+    }
+
+    final_state = _ADDRESS_PIPELINE_GRAPH.invoke(initial_state)
 
     return {
         "extracted": final_state["extracted"],

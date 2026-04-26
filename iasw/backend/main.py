@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from iasw.backend.agents import pipeline
-from iasw.backend.db.models import AuditLog, PendingRequest
+from iasw.backend.db.models import AuditLog, Customer, PendingRequest
 from iasw.backend.db.session import SessionLocal, get_chroma_collection, init_db
 from iasw.backend.services import filenet, rps
 
@@ -152,6 +152,88 @@ async def submit_name_change(
     }
 
 
+@app.post("/requests/address-change")
+async def submit_address_change(
+    customer_id: str = Form(...),
+    new_address: str = Form(...),
+    new_city: str = Form(...),
+    new_state: str = Form(...),
+    new_pincode: str = Form(...),
+    document: UploadFile = Form(...),
+    db: Session = Depends(get_db),
+    chroma=Depends(get_chroma),
+):
+    # 1. Look up customer to get current (old) address and name
+    customer = db.query(Customer).filter_by(customer_id=customer_id).first()
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    old_address_dict = {
+        "address": customer.address or "",
+        "city": customer.city or "",
+        "state": customer.state or "",
+        "pincode": customer.pincode or "",
+    }
+    new_address_dict = {
+        "address": new_address,
+        "city": new_city,
+        "state": new_state,
+        "pincode": new_pincode,
+    }
+
+    # 2. Save to mock FileNet store
+    file_bytes = await document.read()
+    filenet_ref = filenet.save_document(file_bytes, document.filename)
+
+    # 3. Save locally so OCR can read the file
+    _LOCAL_FILENET_DIR.mkdir(parents=True, exist_ok=True)
+    local_path = _LOCAL_FILENET_DIR / f"{filenet_ref}_{document.filename}"
+    local_path.write_bytes(file_bytes)
+
+    # 4. Run AI address pipeline
+    request_id = str(uuid.uuid4())
+    result = pipeline.run_address_pipeline(
+        file_path=local_path,
+        customer_name=customer.current_name,
+        old_address=old_address_dict,
+        new_address=new_address_dict,
+        db_session=db,
+        chroma_collection=chroma,
+        request_id=request_id,
+    )
+
+    scoring = result["scoring"]
+
+    # 5. Persist PendingRequest — old_value and new_value stored as JSON strings
+    pending = PendingRequest(
+        request_id=request_id,
+        customer_id=customer_id,
+        change_type="ADDRESS_CHANGE",
+        old_value=json.dumps(old_address_dict),
+        new_value=json.dumps(new_address_dict),
+        extracted_json=json.dumps(result["extracted"]),
+        confidence_json=json.dumps(scoring),
+        overall_status=result["status"],
+        filenet_ref=filenet_ref,
+        ai_summary=scoring.get("summary"),
+        recommended_action=scoring.get("recommended_action"),
+    )
+    db.add(pending)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "request_id": request_id,
+        "status": result["status"],
+        "overall_confidence": scoring.get("overall_confidence"),
+        "recommended_action": scoring.get("recommended_action"),
+        "summary": scoring.get("summary"),
+    }
+
+
 @app.get("/requests/pending")
 def list_pending_requests(db: Session = Depends(get_db)):
     rows = (
@@ -167,6 +249,7 @@ def list_pending_requests(db: Session = Depends(get_db)):
         {
             "request_id": r.request_id,
             "customer_id": r.customer_id,
+            "change_type": r.change_type,
             "old_value": r.old_value,
             "new_value": r.new_value,
             "overall_status": r.overall_status,
@@ -245,14 +328,30 @@ def submit_decision(
             db.rollback()
             raise
 
-        rps.write_name_update(
-            customer_id=row.customer_id,
-            new_name=row.new_value,
-            request_id=request_id,
-            db_session=db,
-        )
+        if row.change_type == "NAME_CHANGE":
+            rps.write_name_update(
+                customer_id=row.customer_id,
+                new_name=row.new_value,
+                request_id=request_id,
+                db_session=db,
+            )
+            return {"success": True, "message": f"RPS updated. Name changed to {row.new_value}."}
 
-        return {"success": True, "message": f"RPS updated. Name changed to {row.new_value}."}
+        elif row.change_type == "ADDRESS_CHANGE":
+            new_addr = json.loads(row.new_value)
+            rps.write_address_update(
+                customer_id=row.customer_id,
+                new_address=new_addr["address"],
+                new_city=new_addr["city"],
+                new_state=new_addr["state"],
+                new_pincode=new_addr["pincode"],
+                request_id=request_id,
+                db_session=db,
+            )
+            return {"success": True, "message": f"RPS updated. Address changed to {new_addr['address']}, {new_addr['city']}."}
+
+        else:
+            return {"success": True, "message": f"Request approved (no RPS write for change_type={row.change_type})."}
 
     # REJECT
     row.overall_status = "REJECTED"

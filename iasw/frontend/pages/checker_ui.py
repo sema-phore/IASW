@@ -1,3 +1,5 @@
+import json
+
 import requests
 import streamlit as st
 
@@ -23,14 +25,38 @@ if not pending_list:
 for item in pending_list:
     confidence_json = item.get("confidence_json") or {}
     score = confidence_json.get("overall_confidence", "?") if isinstance(confidence_json, dict) else "?"
-    label = (
-        f"{item['customer_id']} — "
-        f"{item['old_value']} → {item['new_value']} "
-        f"[{score}%]"
-    )
+
+    # Show change_type tag in the sidebar button label so the checker
+    # immediately knows what kind of request they are selecting.
+    change_tag = item.get("change_type", "CHANGE")
+
+    # For address changes old_value / new_value are JSON strings — render
+    # a compact human-readable form instead of the raw JSON.
+    old_val = item.get("old_value", "")
+    new_val = item.get("new_value", "")
+    if change_tag == "ADDRESS_CHANGE":
+        try:
+            old_parsed = json.loads(old_val)
+            old_display = old_parsed.get("city", old_val)
+        except Exception:
+            old_display = old_val
+        try:
+            new_parsed = json.loads(new_val)
+            new_display = new_parsed.get("city", new_val)
+        except Exception:
+            new_display = new_val
+        label = (
+            f"[{change_tag}] {item['customer_id']} — "
+            f"{old_display} → {new_display} [{score}%]"
+        )
+    else:
+        label = (
+            f"[{change_tag}] {item['customer_id']} — "
+            f"{old_val} → {new_val} [{score}%]"
+        )
+
     if st.sidebar.button(label, key=f"select_{item['request_id']}"):
         st.session_state["selected_request_id"] = item["request_id"]
-        # Clear any prior decision state for fresh selection
         st.session_state.pop(f"decision_{item['request_id']}", None)
 
 # ---------------------------------------------------------------------------
@@ -55,23 +81,56 @@ if not detail_resp.ok:
 req = detail_resp.json()
 confidence = req.get("confidence_json") or {}
 extracted = req.get("extracted_json") or {}
+change_type = req.get("change_type", "NAME_CHANGE")
 
 # Header
 st.subheader(f"Request: {request_id}")
+st.caption(f"Type: **{change_type}**  |  Status: **{req.get('overall_status', '—')}**")
 
 # AI summary
 st.info(req.get("ai_summary") or "No AI summary available.")
 
-# Metrics
-col1, col2, col3 = st.columns(3)
-col1.metric("Name Match", f"{confidence.get('name_match_score', '—')}%")
-col2.metric("Authenticity", f"{confidence.get('authenticity_score', '—')}%")
-col3.metric("Forgery Check", confidence.get("forgery_verdict", "—"), delta=None)
+# ---------------------------------------------------------------------------
+# Metrics — conditionally rendered by change_type
+# ---------------------------------------------------------------------------
+if change_type == "ADDRESS_CHANGE":
+    # Row 1: name, address, pincode
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Name Match", f"{confidence.get('name_match_score', '—')}%")
+    col2.metric("Address Match", f"{confidence.get('address_match_score', '—')}%")
+    pincode_ok = confidence.get("pincode_match")
+    col3.metric(
+        "Pincode Match",
+        "✔ Match" if pincode_ok else "✘ Mismatch",
+        delta=None,
+    )
+
+    # Row 2: recency, authenticity, forgery
+    col4, col5, col6 = st.columns(3)
+    doc_age = confidence.get("doc_age_days", "—")
+    recency_ok = confidence.get("doc_recency_valid")
+    col4.metric(
+        "Doc Recency",
+        f"{doc_age} days" if isinstance(doc_age, int) else "—",
+        delta="Valid" if recency_ok else "Stale",
+        delta_color="normal" if recency_ok else "inverse",
+    )
+    col5.metric("Authenticity", f"{confidence.get('authenticity_score', '—')}%")
+    col6.metric("Forgery Check", confidence.get("forgery_verdict", "—"), delta=None)
+
+else:
+    # Original 3-column layout for NAME_CHANGE
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Name Match", f"{confidence.get('name_match_score', '—')}%")
+    col2.metric("Authenticity", f"{confidence.get('authenticity_score', '—')}%")
+    col3.metric("Forgery Check", confidence.get("forgery_verdict", "—"), delta=None)
 
 # FileNet reference
 st.caption(f"FileNet Reference: {req.get('filenet_ref', 'N/A')}")
 
-# Expanders
+# ---------------------------------------------------------------------------
+# Expanders — generic, render from JSON so they work for both change types
+# ---------------------------------------------------------------------------
 with st.expander("Extracted Document Fields"):
     if extracted:
         st.table({"Field": list(extracted.keys()), "Value": list(extracted.values())})

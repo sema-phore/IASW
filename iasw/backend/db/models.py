@@ -12,6 +12,12 @@ class Customer(Base):
     customer_id = Column(String, primary_key=True)
     current_name = Column(String)
     dob = Column(String)
+    address = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    state = Column(String, nullable=True)
+    pincode = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
 
 
 class PendingRequest(Base):
@@ -53,3 +59,9 @@ class RPSRecord(Base):
     customer_id = Column(String, primary_key=True)
     name = Column(String)
     last_updated = Column(DateTime, nullable=True)
+    address = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    state = Column(String, nullable=True)
+    pincode = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
