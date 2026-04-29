@@ -2,6 +2,16 @@
 
 IASW is a **Human-in-the-Loop (HITL) AI system** that automates bank account change requests — including legal name changes, address updates, and contact (phone/email) changes. A LangGraph AI pipeline extracts and verifies information from uploaded documents (or validates OTPs for contact changes), while a human checker retains final approval authority before any account update is committed to the core banking system.
 
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11+-blue?style=flat-square&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/streamlit-1.54+-FF4B4B?style=flat-square&logo=streamlit&logoColor=white"/>
+  <img src="https://img.shields.io/badge/langgraph-1.0.8+-green?style=flat-square"/>
+  <img src="https://img.shields.io/badge/langchain-1.2.10+-1C3C3C?style=flat-square&logo=langchain&logoColor=white"/>
+  <img src="https://img.shields.io/badge/openai-GPT--4o--mini-412991?style=flat-square&logo=openai&logoColor=white"/>
+  <img src="https://img.shields.io/badge/chromadb-1.1.0+-orange?style=flat-square"/>
+  <img src="https://img.shields.io/badge/license-MIT-yellow?style=flat-square"/>
+</p>
+
 ---
 
 ## System Architecture
