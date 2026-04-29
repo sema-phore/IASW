@@ -7,7 +7,7 @@ IASW is a **Human-in-the-Loop (HITL) AI system** that automates bank account cha
 ## System Architecture
 
 <p align="center">
-  <img src="architecture.svg" alt="IASW System Architecture" width="100%"/>
+  <img src="docs/architecture.svg" alt="IASW System Architecture" width="100%"/>
 </p>
 
 **Architecture walkthrough (top → bottom):**
